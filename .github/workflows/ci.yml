@@ -1,0 +1,66 @@
+name: GitHub CI
+
+on:
+
+  pull_request:
+
+  push:
+
+  schedule:
+    - cron: 0 0 * * 0
+
+jobs:
+
+  build-test:
+
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            dir: 1.3-rc/buster
+            env:
+              img: julia:1.3-rc-buster
+          - os: ubuntu-latest
+            dir: 1.3-rc/buster
+            env:
+              img: julia:1.3-rc-buster
+              arch: 'i386'
+          - os: windows-latest
+            dir: 1.3-rc/windows/windowsservercore-1803
+            env:
+              img: julia:1.3-rc-windows-windowsservercore-1803
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+      - uses: actions/checkout@v1
+        with:
+          fetch-depth: 1
+
+      - name: Prepare Environment
+        #if: !startsWith(matrix.os, 'windows-') # don't waste time re-pulling (massive) Windows base images if we don't need to
+        run: docker system prune --all --force --volumes
+      - name: Happy Eyeballs
+        if: !startsWith(matrix.os, 'windows-')
+        run: wget -qO- 'https://github.com/tianon/pgp-happy-eyeballs/raw/master/hack-my-builds.sh' | bash
+
+      - name: Fetch/Prepare Base
+        if: matrix.env.arch
+        working-directory: ${{ matrix.dir }}
+        run: |
+          from="$(awk '$1 == toupper("FROM") { print $2 }' Dockerfile)"
+          docker pull "$arch/$from"
+          docker tag "$arch/$from" "$from"
+
+      - name: Build Image
+        working-directory: ${{ matrix.dir }}
+        run: docker build -t "$img" .
+
+      - name: Run Tests
+        run: |
+          git clone --depth 1 https://github.com/docker-library/official-images.git ~/oi
+          ~/oi/test/run.sh "$img"
+
+      - name: '"docker images"'
+        run: docker images
